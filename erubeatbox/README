@@ -8,7 +8,16 @@ make install to install using mpremote.
 
 fs contains the files dumped to the device.
 
+Wiring:
+
+Pins are for the Pico. Everything grounded to GND (38).
+ * Button on GP 14 (pin 19).
+ * Primary LED GP 15 (20). 220 Ω resistor
+ * Secondary LED GP 16 (21). 220 Ω resistor
+ * Speaker GP 5 (7). I am using a BF-2 8 Ω 0.5 W active speaker.
+
 TODO:
  * Optimize melody storage and decoding.
  * Use a timer for note playing accuracy.
  * Add controls to web server page.
+ * Does the speaker need an amplifier?
