@@ -1,3 +1,5 @@
+# Notes to decode melodies from https://github.com/twisst/Music-for-Raspberry-Pi-Pico.
+
 notes = {
 'REST': None,
 "NOTE_B0": 31,
