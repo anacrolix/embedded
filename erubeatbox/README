@@ -1,0 +1,9 @@
+EruBeatBox
+
+Makes an AP with a captive portal that shows you the current melody.
+
+Pulses the main LED until the melodies are loaded. Press the button to start. Press to skip. An alternate LED shows half notes.
+
+make install to install using mpremote.
+
+fs contains the files dumped to the device.
