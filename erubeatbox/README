@@ -7,3 +7,8 @@ Pulses the main LED until the melodies are loaded. Press the button to start. Pr
 make install to install using mpremote.
 
 fs contains the files dumped to the device.
+
+TODO:
+ * Optimize melody storage and decoding.
+ * Use a timer for note playing accuracy.
+ * Add controls to web server page.
