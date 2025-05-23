@@ -147,6 +147,7 @@ def play_randomly():
 def play_in_order():
     play(melody)
 
+# Take this from erumplib...
 def wlan_status_name(status):
     prefix = 'STAT_'
     for name in dir(network):
