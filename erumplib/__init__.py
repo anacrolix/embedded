@@ -1,3 +1,8 @@
+from .neopixel import Neopixel
+
+def LorikeetNeopixel(*, state_machine=0, pin):
+    return Neopixel(5, state_machine, pin, mode="GRB")
+
 import network
 
 # Converts network.WLAN status integer to its constant name.

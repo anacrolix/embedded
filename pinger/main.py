@@ -5,24 +5,77 @@ import erumplib
 import requests
 import gc
 import math
+import tm1637
+from machine import Pin
 
+from erumplib import LorikeetNeopixel
 from picozero import pico_led, LED
 
 red_led = LED(18)
 yellow_led = LED(17)
 green_led = LED(16)
 
+
+class RGB(tuple):
+    
+    def blend(self, other, ratio=0.5):
+        return RGB(a*(1-ratio)+ratio*other[i] for i, a in enumerate(self))
+    
+class RGBs:
+    pass
+
+for color, values in {
+    'red': (255, 0, 0),
+    'amber': (0xff, 0xbf, 0),
+    'green': (0, 255, 0),
+}.items():
+    setattr(RGBs, color.upper(), RGB(values))
+        
+
+
+tm = tm1637.TM1637(clk=Pin(13), dio=Pin(12))
+neo = LorikeetNeopixel(pin=0)
+neo.clear()
+neo.brightness(25)
+neo[:] = [
+    RGBs.GREEN,
+    RGBs.GREEN.blend(RGBs.AMBER),
+    RGBs.AMBER,
+    RGBs.AMBER.blend(RGBs.RED),
+    RGBs.RED,
+]
+#neo.set_pixel_line_gradient(0, 4, RGBs.green, RGBs.red)
+#neo.fill(RGBs.red)
+neo.show()
+
+
+CONNECT_ADDRS = [
+    ('micropython.org', 80),
+    ('google.com', 80),
+    ('192.168.1.31', 9091),
+]
+CONNECT_ADDR = CONNECT_ADDRS[0]
+CONNECT_TIMEOUT = 10000
+
 LED_SUFFIX = '_led'
 
 def get_all_colors():
     return ['red', 'yellow', 'green']
 
-def set_leds(*colors):
-    for a in globals():
-        if a.endswith(LED_SUFFIX) and a[:-len(LED_SUFFIX)] not in colors:
-            globals()[a].off()
+def get_color_led(color):
+    return globals()[color+LED_SUFFIX]
+
+def set_leds(*colors, **methods):
     for a in colors:
-        globals()[a+'_led'].on()
+        get_color_led(a).on()
+    for color, method in methods.items():
+        getattr(get_color_led(color), method)()
+    for color in get_all_colors():
+        if color in methods:
+            continue
+        if color in colors:
+            continue
+        get_color_led(color).off()
 
 async def cycle_leds():
     while True:
@@ -37,6 +90,7 @@ def test_cycle_leds():
         time.sleep(1)
 
 def connect_wlan(deets):
+    tm.show('wifi')
     set_leds()
     yellow_led.blink()
     wlan = network.WLAN(network.WLAN.IF_STA)
@@ -44,7 +98,7 @@ def connect_wlan(deets):
     print('initial ssid:', wlan.config('ssid'))
     wlan.active(True)
     print(wlan.isconnected())
-    if wlan.config('ssid') != deets[0]:
+    if wlan.config('ssid') != deets[0] or not wlan.isconnected():
         for a in wlan.scan():
             print(a)
         wlan.connect(*deets)
@@ -82,43 +136,95 @@ def pstdev(data, mu):
     n = len(data)
     return math.sqrt(sum((a-mu)**2 for a in data)/n)
 
+def decay_avg(times):
+    div = 2
+    sum = 0
+    for t in reversed(times):
+        sum += t/div
+        #print(sum, t, div)
+        div *= 2
+    return sum
+
+def get_neo_rgbs(last_times):
+    sorted_scores = list(sorted(last_times))
+    def get_index(of):
+        for j, val in enumerate(sorted_scores):
+            if of < val:
+                return j
+        else:
+            return len(sorted_scores)        
+    for i in range(5):
+        try:
+            val = last_times[-i-1]
+        except IndexError:
+            yield RGBs.GREEN
+        else:
+            pos = get_index(val)
+            ratio = max(pos/len(last_times)*2-1, 0)
+            print('ratio', ratio)
+            yield RGBs.GREEN.blend(RGBs.RED, ratio=ratio)
+
 def time_connect():
-    addr = socket.getaddrinfo('micropython.org', 80)[0][-1]
+    addr = socket.getaddrinfo(*CONNECT_ADDR)[0][-1]
+    print(addr)
     latest_times = []
     p_n = 0
     p_sum = 0
     while True:
         pico_led.on()
-        with Socket() as s:
-            start = time.time_ns()
-            s.settimeout(10)
-            try:
-                s.connect(addr)
-            except Exception as exc:
-                print(f'error connecting: {exc}')
-                set_leds('red')
-        pico_led.off()
+        try:
+            with Socket() as s:
+                start = time.time_ns()
+                s.settimeout(CONNECT_TIMEOUT/1000)
+                try:
+                    s.connect(addr)
+                except Exception as exc:
+                    print(f'error connecting: {exc}')
+                    set_leds('red')
+        finally:
+            pico_led.off()
+        
         ns = time.time_ns() - start
-        delay = ns/1e9
+        delay = ns/1e6
         p_sum += delay
         p_n += 1
         latest_times.append(delay)
-        while len(latest_times) > 10:
+        while len(latest_times) > 100:
             latest_times.pop(0)
         mu = p_sum/p_n
         _pstdev = pstdev(latest_times, mu)
-        #print(delay, gc.mem_free())
-        print(mu, mu+_pstdev, delay, _pstdev, stdev(latest_times))
+        _stdev = stdev(latest_times)
         avg = sum(latest_times)/len(latest_times)
-        if delay >= 10:
-            set_leds('red')
-        elif delay > 0.5:
-            set_leds()
-            yellow_led.blink()
-        elif delay > mu+_pstdev:
-            set_leds('yellow', 'green')
+        
+        #print(delay, gc.mem_free())
+        if False:
+            sigma = _stdev
+            mean = avg
+        else:
+            sigma = _pstdev
+            mean = mu
+        
+        print(
+            "last", round(delay),
+            "mean", round(mean),
+            "pstdev", round(_pstdev),
+            "stdev", round(_stdev),
+        )
+        #tm_n = ns//1000000
+        # Ceil because my decay algorithm would always fall short without infinite data points.
+        tm_n = math.ceil(decay_avg(latest_times))
+        tm.number(tm_n)
+        
+        if delay >= CONNECT_TIMEOUT:
+            set_leds(red='blink')
+        elif delay > mean+3*sigma:
+            set_leds(yellow='blink')
+        elif delay > mean+2*sigma:
+            set_leds(green='blink')
         else:
             set_leds('green')
+        neo[:] = list(get_neo_rgbs(latest_times))
+        neo.show()
         start = time.time_ns()
         time.sleep(1)
 
@@ -132,7 +238,6 @@ def main():
     except:
         set_leds()
         red_led.blink()
-        pico_led.blink()
         raise
 
 main()
